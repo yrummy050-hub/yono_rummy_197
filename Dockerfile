@@ -64,22 +64,28 @@ EXPOSE 8080
 
 # Configure Apache
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
-RUN echo 'ServerName localhost' >> /etc/apache2/apache2.conf && \
+RUN echo 'ServerName localhost' > /etc/apache2/conf-available/servername.conf && \
     echo 'Listen 8080' > /etc/apache2/ports.conf && \
-    echo 'NameVirtualHost *:8080' >> /etc/apache2/ports.conf && \
     a2enmod rewrite headers && \
+    a2enconf servername && \
+    # Disable default site and enable our configuration
     a2dissite 000-default && \
-    a2ensite 000-default && \
-    sed -ri -e 's!<VirtualHost \*:80>!<VirtualHost *:8080>!g' /etc/apache2/sites-available/000-default.conf && \
-    sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf && \
-    sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf && \
-    echo '<Directory "${APACHE_DOCUMENT_ROOT}">\n\
-    Options Indexes FollowSymLinks\n\
-    AllowOverride All\n\
-    Require all granted\n\
-    Order allow,deny\n\
-    Allow from all\n\
-</Directory>' > /etc/apache2/conf-available/docker-php.conf
+    # Ensure the document root exists and has correct permissions
+    mkdir -p ${APACHE_DOCUMENT_ROOT} && \
+    chown -R www-data:www-data ${APACHE_DOCUMENT_ROOT} && \
+    # Configure document root in Apache
+    echo '<VirtualHost *:8080>\n\
+    DocumentRoot ${APACHE_DOCUMENT_ROOT}\n\
+    <Directory "${APACHE_DOCUMENT_ROOT}">\n\
+        Options Indexes FollowSymLinks\n\
+        AllowOverride All\n\
+        Require all granted\n\
+    </Directory>\n\
+    ErrorLog ${APACHE_LOG_DIR}/error.log\n\
+    CustomLog ${APACHE_LOG_DIR}/access.log combined\n\
+</VirtualHost>' > /etc/apache2/sites-available/000-default.conf && \
+    # Enable the site
+    a2ensite 000-default.conf
 
 # Start Apache
-CMD ["/usr/sbin/apache2ctl", "-D", "FOREGROUND"]
+CMD ["apache2ctl", "-D", "FOREGROUND"]
