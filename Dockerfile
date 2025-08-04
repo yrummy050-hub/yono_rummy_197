@@ -1,40 +1,42 @@
-FROM php:8.2-apache
+FROM php:8.1-apache
 
-# Install system dependencies
+# Install system dependencies and PHP extensions
 RUN apt-get update && apt-get install -y \
     git \
     curl \
     libpng-dev \
     libonig-dev \
     libxml2-dev \
+    libzip-dev \
     zip \
     unzip \
-    && docker-php-ext-install pdo pdo_mysql mbstring exif pcntl bcmath gd
+    && docker-php-ext-install pdo pdo_mysql mbstring exif pcntl bcmath gd zip
 
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 # Set working directory
 WORKDIR /var/www/html
 
-# Copy composer.json first to leverage Docker cache
-COPY composer.json .
-
-# Install PHP dependencies
-RUN if [ -f composer.lock ]; then \
-        composer install --no-scripts --no-autoloader --no-dev --optimize-autoloader; \
-    else \
-        composer update --no-scripts --no-autoloader --no-dev --optimize-autoloader; \
-    fi
-
-# Copy the rest of the application
+# Copy application files
 COPY . .
 
-# Generate application key and optimize
-RUN composer dump-autoload --optimize && \
-    php artisan key:generate --force && \
-    chown -R www-data:www-data /var/www/html/storage && \
-    chmod -R 775 /var/www/html/storage && \
-    chmod -R 775 /var/www/html/bootstrap/cache
+# Install Composer dependencies
+RUN if [ -f composer.lock ]; then \
+        composer install --no-dev --optimize-autoloader --no-interaction; \
+    else \
+        composer update --no-dev --optimize-autoloader --no-interaction; \
+    fi
+
+# Set up storage and cache permissions
+RUN mkdir -p storage/framework/{sessions,views,cache} && \
+    chown -R www-data:www-data storage bootstrap/cache && \
+    chmod -R 775 storage bootstrap/cache
+
+# Generate application key if not exists
+RUN if [ ! -f .env ]; then \
+        cp .env.example .env && \
+        php artisan key:generate --force; \
+    fi
 
 # Apache configuration
 RUN a2enmod rewrite
