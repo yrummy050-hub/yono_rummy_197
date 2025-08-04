@@ -44,12 +44,8 @@ RUN mkdir -p storage/framework/{sessions,views,cache} \
     && chown -R dockeruser:www-data storage bootstrap/cache \
     && chmod -R 775 storage bootstrap/cache
 
-# Generate application key if not exists
-RUN if [ ! -f .env ]; then \
-        cp .env.example .env; \
-        chown dockeruser:dockeruser .env; \
-        su -s /bin/bash -c "php artisan key:generate --force" dockeruser; \
-    fi
+# Generate application key (Render will provide the APP_KEY via environment variables)
+RUN su -s /bin/bash -c "/usr/local/bin/php artisan key:generate --force" dockeruser
 
 # Apache configuration
 RUN a2enmod rewrite
