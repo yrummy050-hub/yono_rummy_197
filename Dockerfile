@@ -15,28 +15,34 @@ RUN apt-get update && apt-get install -y \
 # Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
-# Set working directory
+# Set working directory and create necessary directories
 WORKDIR /var/www/html
 
 # Create necessary directories and set permissions
-RUN mkdir -p /var/www/html && \
-    chown -R www-data:www-data /var/www/html && \
-    mkdir -p storage/framework/{sessions,views,cache} && \
+RUN mkdir -p storage/framework/{sessions,views,cache} && \
     mkdir -p bootstrap/cache && \
+    chown -R www-data:www-data /var/www/html && \
     chmod -R 775 storage bootstrap/cache
 
 # Copy application files
 COPY --chown=www-data:www-data . .
 
-# Install Composer dependencies and generate application key
-USER www-data
-RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts && \
-    if [ -z "$APP_KEY" ]; then \
-        php artisan key:generate --force; \
+# Install Composer dependencies (without scripts first)
+RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
+
+# Generate application key if not set
+RUN if [ -z "$APP_KEY" ]; then \
+        php artisan key:generate --force --no-interaction; \
+    else \
+        echo "APP_KEY already set"; \
     fi
 
-# Switch back to root for Apache configuration
-USER root
+# Run composer scripts after key is generated
+RUN composer run-script post-autoload-dump
+
+# Fix permissions
+RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache /var/www/html/vendor && \
+    chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 
 # Configure Apache
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
