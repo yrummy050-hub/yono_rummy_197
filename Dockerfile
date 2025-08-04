@@ -27,21 +27,11 @@ RUN mkdir -p storage/framework/{sessions,views,cache} && \
 # Copy application files
 COPY --chown=www-data:www-data . .
 
-# Install Composer dependencies (without scripts first)
-RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
+# Install Composer dependencies
+RUN composer install --no-dev --optimize-autoloader --no-interaction
 
-# Generate application key if not set
-RUN if [ -z "$APP_KEY" ]; then \
-        php artisan key:generate --force --no-interaction; \
-    else \
-        echo "APP_KEY already set"; \
-    fi
-
-# Run composer scripts after key is generated
-RUN composer run-script post-autoload-dump
-
-# Fix permissions
-RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache /var/www/html/vendor && \
+# Set proper permissions
+RUN chown -R www-data:www-data /var/www/html && \
     chmod -R 775 /var/www/html/storage /var/www/html/bootstrap/cache
 
 # Configure Apache
