@@ -1,10 +1,5 @@
 FROM php:8.1-apache
 
-# Create system user to run Composer and Artisan commands
-RUN useradd -G www-data,root -u 1000 -d /home/dockeruser dockeruser \
-    && mkdir -p /home/dockeruser/.composer \
-    && chown -R dockeruser:dockeruser /home/dockeruser
-
 # Install system dependencies and PHP extensions
 RUN apt-get update && apt-get install -y \
     git \
@@ -23,44 +18,25 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # Set working directory
 WORKDIR /var/www/html
 
-# Create necessary directories that might be missing but are required by Composer
-RUN mkdir -p database/seeds database/factories database/migrations
-
-# Copy composer files first to leverage Docker cache
-COPY --chown=dockeruser:dockeruser composer.json composer.lock* ./
-
-# Install PHP dependencies as non-root user
-RUN if [ -f composer.lock ]; then \
-        su -s /bin/bash -c "composer install --no-dev --optimize-autoloader --no-interaction --no-scripts" dockeruser; \
-    else \
-        su -s /bin/bash -c "composer update --no-dev --optimize-autoloader --no-interaction --no-scripts" dockeruser; \
-    fi
+# Create necessary directories and set permissions
+RUN mkdir -p /var/www/html && \
+    chown -R www-data:www-data /var/www/html && \
+    mkdir -p storage/framework/{sessions,views,cache} && \
+    mkdir -p bootstrap/cache && \
+    chmod -R 775 storage bootstrap/cache
 
 # Copy application files
-COPY --chown=dockeruser:dockeruser . .
+COPY --chown=www-data:www-data . .
 
-# Set up storage and cache permissions
-RUN mkdir -p storage/framework/{sessions,views,cache} \
-    && chown -R dockeruser:www-data storage bootstrap/cache \
-    && chmod -R 775 storage bootstrap/cache
+# Install Composer dependencies and generate application key
+USER www-data
+RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts && \
+    if [ -z "$APP_KEY" ]; then \
+        php artisan key:generate --force; \
+    fi
 
-# Generate application key only if not set in environment
-# RUN if [ -z "$APP_KEY" ]; then \
-#         su -s /bin/bash -c "/usr/local/bin/php artisan key:generate --force" dockeruser; \
-#     fi
-
-# Apache configuration
-RUN a2enmod rewrite
-COPY docker/000-default.conf /etc/apache2/sites-available/000-default.conf
-
-# Set correct permissions for Apache
-RUN chown -R www-data:www-data /var/www/html && \
-    find /var/www/html -type f -exec chmod 644 {} \; && \
-    find /var/www/html -type d -exec chmod 755 {} \; && \
-    chmod -R 777 storage bootstrap/cache
-
-# Expose port 8080
-EXPOSE 8080
+# Switch back to root for Apache configuration
+USER root
 
 # Configure Apache
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
@@ -70,9 +46,6 @@ RUN echo 'ServerName localhost' > /etc/apache2/conf-available/servername.conf &&
     a2enconf servername && \
     # Disable default site and enable our configuration
     a2dissite 000-default && \
-    # Ensure the document root exists and has correct permissions
-    mkdir -p ${APACHE_DOCUMENT_ROOT} && \
-    chown -R www-data:www-data ${APACHE_DOCUMENT_ROOT} && \
     # Configure document root in Apache
     echo '<VirtualHost *:8080>\n\
     DocumentRoot ${APACHE_DOCUMENT_ROOT}\n\
@@ -87,5 +60,13 @@ RUN echo 'ServerName localhost' > /etc/apache2/conf-available/servername.conf &&
     # Enable the site
     a2ensite 000-default.conf
 
+# Expose port 8080
+EXPOSE 8080
+
+# Set up storage and cache permissions
+RUN mkdir -p storage/framework/{sessions,views,cache} \
+    && chown -R www-data:www-data storage bootstrap/cache \
+    && chmod -R 775 storage bootstrap/cache
+
 # Start Apache
-CMD ["apache2ctl", "-D", "FOREGROUND"]
+CMD ["apache2-foreground"]
