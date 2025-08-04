@@ -27,12 +27,16 @@ RUN mkdir -p storage/framework/{sessions,views,cache} && \
 # Copy application files
 COPY --chown=www-data:www-data . .
 
-# Switch to www-data user and install dependencies
-USER www-data
-RUN composer install --no-dev --optimize-autoloader --no-interaction
+# Install dependencies without running scripts first
+RUN composer install --no-dev --optimize-autoloader --no-interaction --no-scripts
 
-# Switch back to root for Apache configuration
-USER root
+# Run composer scripts with proper environment
+RUN if [ -f artisan ]; then \
+        php artisan package:discover --no-interaction; \
+    fi
+
+# Run the rest of the post-install scripts
+RUN composer run-script post-autoload-dump
 
 # Set proper permissions
 RUN chown -R www-data:www-data /var/www/html && \
