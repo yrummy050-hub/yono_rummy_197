@@ -56,15 +56,23 @@ COPY docker/000-default.conf /etc/apache2/sites-available/000-default.conf
 # Set correct permissions for Apache
 RUN chown -R www-data:www-data /var/www/html && \
     find /var/www/html -type f -exec chmod 644 {} \; && \
-    find /var/www/html -type d -exec chmod 755 {} \;
+    find /var/www/html -type d -exec chmod 755 {} \; && \
+    chmod -R 777 storage bootstrap/cache
 
 # Expose port 8080
 EXPOSE 8080
 
-# Start Apache with proper environment
+# Configure Apache
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public
-RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf
-RUN sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
+RUN echo 'ServerName localhost' >> /etc/apache2/apache2.conf && \
+    a2enmod rewrite headers && \
+    sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf && \
+    sed -ri -e 's!/var/www/!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf && \
+    echo '<Directory "${APACHE_DOCUMENT_ROOT}">\n\
+    Options Indexes FollowSymLinks\n\
+    AllowOverride All\n\
+    Require all granted\n\
+</Directory>' > /etc/apache2/conf-available/docker-php.conf
 
 # Start Apache
 CMD ["apache2-foreground"]
