@@ -45,9 +45,9 @@ RUN mkdir -p storage/framework/{sessions,views,cache} \
     && chmod -R 775 storage bootstrap/cache
 
 # Generate application key only if not set in environment
-RUN if [ -z "$APP_KEY" ]; then \
-        su -s /bin/bash -c "/usr/local/bin/php artisan key:generate --force" dockeruser; \
-    fi
+# RUN if [ -z "$APP_KEY" ]; then \
+#         su -s /bin/bash -c "/usr/local/bin/php artisan key:generate --force" dockeruser; \
+#     fi
 
 # Apache configuration
 RUN a2enmod rewrite
