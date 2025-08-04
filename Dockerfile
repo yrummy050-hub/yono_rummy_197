@@ -18,14 +18,21 @@ COPY --from=composer:2.6 /usr/bin/composer /usr/bin/composer
 # Set working directory
 WORKDIR /var/www
 
+# Create required directories first
+RUN mkdir -p database/seeds database/factories database/migrations \
+    && chown -R www-data:www-data /var/www
+
 # Copy only composer files first for better caching
 COPY --chown=www-data:www-data composer.json composer.lock* ./
 
-# Install dependencies (no scripts)
-RUN composer install --no-dev --no-scripts --no-interaction --optimize-autoloader
+# Install dependencies (no scripts, no autoloader optimization yet)
+RUN composer install --no-dev --no-scripts --no-interaction --no-autoloader
 
 # Copy application files
 COPY --chown=www-data:www-data . .
+
+# Now run the autoloader with all files in place
+RUN composer dump-autoload --optimize --no-dev --classmap-authoritative
 
 # Set up storage and cache directories
 RUN mkdir -p storage/framework/{sessions,views,cache} \
