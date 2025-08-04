@@ -1,5 +1,10 @@
 FROM php:8.1-apache
 
+# Create system user to run Composer and Artisan commands
+RUN useradd -G www-data,root -u 1000 -d /home/dockeruser dockeruser \
+    && mkdir -p /home/dockeruser/.composer \
+    && chown -R dockeruser:dockeruser /home/dockeruser
+
 # Install system dependencies and PHP extensions
 RUN apt-get update && apt-get install -y \
     git \
@@ -12,30 +17,35 @@ RUN apt-get update && apt-get install -y \
     unzip \
     && docker-php-ext-install pdo pdo_mysql mbstring exif pcntl bcmath gd zip
 
+# Install Composer
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
 # Set working directory
 WORKDIR /var/www/html
 
-# Copy application files
-COPY . .
+# Copy composer files first to leverage Docker cache
+COPY --chown=dockeruser:dockeruser composer.json composer.lock* ./
 
-# Install Composer dependencies
+# Install PHP dependencies as non-root user
 RUN if [ -f composer.lock ]; then \
-        composer install --no-dev --optimize-autoloader --no-interaction; \
+        su -s /bin/bash -c "composer install --no-dev --optimize-autoloader --no-interaction" dockeruser; \
     else \
-        composer update --no-dev --optimize-autoloader --no-interaction; \
+        su -s /bin/bash -c "composer update --no-dev --optimize-autoloader --no-interaction" dockeruser; \
     fi
 
+# Copy application files
+COPY --chown=dockeruser:dockeruser . .
+
 # Set up storage and cache permissions
-RUN mkdir -p storage/framework/{sessions,views,cache} && \
-    chown -R www-data:www-data storage bootstrap/cache && \
-    chmod -R 775 storage bootstrap/cache
+RUN mkdir -p storage/framework/{sessions,views,cache} \
+    && chown -R dockeruser:www-data storage bootstrap/cache \
+    && chmod -R 775 storage bootstrap/cache
 
 # Generate application key if not exists
 RUN if [ ! -f .env ]; then \
-        cp .env.example .env && \
-        php artisan key:generate --force; \
+        cp .env.example .env; \
+        chown dockeruser:dockeruser .env; \
+        su -s /bin/bash -c "php artisan key:generate --force" dockeruser; \
     fi
 
 # Apache configuration
