@@ -23,14 +23,17 @@ COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 # Set working directory
 WORKDIR /var/www/html
 
+# Create necessary directories that might be missing but are required by Composer
+RUN mkdir -p database/seeds database/factories database/migrations
+
 # Copy composer files first to leverage Docker cache
 COPY --chown=dockeruser:dockeruser composer.json composer.lock* ./
 
 # Install PHP dependencies as non-root user
 RUN if [ -f composer.lock ]; then \
-        su -s /bin/bash -c "composer install --no-dev --optimize-autoloader --no-interaction" dockeruser; \
+        su -s /bin/bash -c "composer install --no-dev --optimize-autoloader --no-interaction --no-scripts" dockeruser; \
     else \
-        su -s /bin/bash -c "composer update --no-dev --optimize-autoloader --no-interaction" dockeruser; \
+        su -s /bin/bash -c "composer update --no-dev --optimize-autoloader --no-interaction --no-scripts" dockeruser; \
     fi
 
 # Copy application files
