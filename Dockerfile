@@ -27,8 +27,12 @@ RUN mkdir -p storage/framework/{sessions,views,cache} && \
 # Copy application files
 COPY --chown=www-data:www-data . .
 
-# Install Composer dependencies
+# Switch to www-data user and install dependencies
+USER www-data
 RUN composer install --no-dev --optimize-autoloader --no-interaction
+
+# Switch back to root for Apache configuration
+USER root
 
 # Set proper permissions
 RUN chown -R www-data:www-data /var/www/html && \
