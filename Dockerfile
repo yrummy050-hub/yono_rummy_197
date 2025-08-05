@@ -31,14 +31,27 @@ RUN mkdir -p database/seeds database/factories database/migrations \
     && chown -R www-data:www-data /var/www \
     && chmod -R 775 storage bootstrap/cache
 
-# Copy application files
+# Copy only composer files first for better caching
+COPY --chown=www-data:www-data composer.json composer.lock ./
+
+# Install dependencies without running scripts
+RUN composer install --no-scripts --no-interaction --no-autoloader --no-dev
+
+# Copy application files (except what's in .dockerignore)
 COPY --chown=www-data:www-data . .
 
-# Install dependencies (skip scripts during install)
-RUN composer install --no-scripts --no-interaction --optimize-autoloader --no-dev
+# Generate optimized autoloader
+RUN composer dump-autoload --optimize --no-dev --classmap-authoritative
 
-# Run package discovery and optimization after all files are in place
-RUN php artisan package:discover --no-interaction
+# Create .env file with default values if it doesn't exist
+RUN if [ ! -f .env ]; then \
+        cp .env.example .env; \
+        php -r "file_put_contents('.env', preg_replace('/APP_KEY=.*/', 'APP_KEY='.base64_encode(random_bytes(32)), file_get_contents('.env')));" \
+    fi
+
+# Cache configuration and routes
+RUN php artisan config:cache \
+    && php artisan route:cache
 
 # Configure Apache for Render
 ENV APACHE_DOCUMENT_ROOT=/var/www/public
@@ -68,16 +81,20 @@ RUN a2enmod rewrite headers \
 RUN chown -R www-data:www-data /var/www \
     && chmod -R 775 storage bootstrap/cache
 
-# Generate application key if not set
+# Set up storage and cache permissions
+RUN chmod -R 775 storage/ \
+    && chmod -R 775 bootstrap/cache/
+
+# Generate application key if not set in environment
 RUN if [ -z "$APP_KEY" ]; then \
-        php artisan key:generate --force; \
+        php artisan key:generate --no-interaction --force; \
     fi
 
-# Clear all caches
-RUN php artisan config:clear \
-    && php artisan cache:clear \
-    && php artisan view:clear \
-    && php artisan route:clear
+# Optimize the application
+RUN php artisan optimize:clear \
+    && php artisan config:cache \
+    && php artisan route:cache \
+    && php artisan view:cache
 
 # Expose the port the app runs on
 EXPOSE ${PORT}
