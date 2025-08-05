@@ -31,11 +31,15 @@ RUN mkdir -p database/seeds database/factories database/migrations \
     && chown -R www-data:www-data /var/www \
     && chmod -R 775 storage bootstrap/cache
 
-# Copy only composer files first for better caching
-COPY --chown=www-data:www-data composer.json composer.lock ./
+# Copy composer files first for better caching
+COPY --chown=www-data:www-data composer.* ./
 
 # Install dependencies without running scripts
-RUN composer install --no-scripts --no-interaction --no-autoloader --no-dev
+RUN if [ -f composer.lock ]; then \
+        composer install --no-scripts --no-interaction --no-autoloader --no-dev; \
+    else \
+        composer install --no-scripts --no-interaction --no-autoloader --no-dev --no-plugins; \
+    fi
 
 # Copy application files (except what's in .dockerignore)
 COPY --chown=www-data:www-data . .
@@ -45,13 +49,27 @@ RUN composer dump-autoload --optimize --no-dev --classmap-authoritative
 
 # Create .env file with default values if it doesn't exist
 RUN if [ ! -f .env ]; then \
-        cp .env.example .env; \
-        php -r "file_put_contents('.env', preg_replace('/APP_KEY=.*/', 'APP_KEY='.base64_encode(random_bytes(32)), file_get_contents('.env')));" \
+        if [ -f .env.example ]; then \
+            cp .env.example .env; \
+        else \
+            touch .env; \
+        fi; \
+        php -r "file_put_contents('.env', preg_replace('/APP_KEY=.*/', 'APP_KEY='.base64_encode(random_bytes(32)), file_get_contents('.env') ?: ''));" \
+    fi
+
+# Set up storage and cache permissions
+RUN chmod -R 775 storage/ bootstrap/cache/ \
+    && chown -R www-data:www-data storage/ bootstrap/cache/
+
+# Generate application key if not set in environment
+RUN if ! grep -q '^APP_KEY=' .env; then \
+        php artisan key:generate --no-interaction --force; \
     fi
 
 # Cache configuration and routes
 RUN php artisan config:cache \
-    && php artisan route:cache
+    && php artisan route:cache \
+    && php artisan view:cache
 
 # Configure Apache for Render
 ENV APACHE_DOCUMENT_ROOT=/var/www/public
