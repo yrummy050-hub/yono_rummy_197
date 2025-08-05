@@ -31,17 +31,14 @@ RUN mkdir -p database/seeds database/factories database/migrations \
     && chown -R www-data:www-data /var/www \
     && chmod -R 775 storage bootstrap/cache
 
-# Copy only composer files first for better caching
-COPY --chown=www-data:www-data composer.json composer.lock* ./
-
-# Install dependencies without autoloader optimization first
-RUN composer install --no-scripts --no-interaction --no-autoloader
-
 # Copy application files
 COPY --chown=www-data:www-data . .
 
-# Optimize the autoloader
-RUN composer dump-autoload --optimize --no-dev --classmap-authoritative
+# Install dependencies (skip scripts during install)
+RUN composer install --no-scripts --no-interaction --optimize-autoloader --no-dev
+
+# Run package discovery and optimization after all files are in place
+RUN php artisan package:discover --no-interaction
 
 # Configure Apache for Render
 ENV APACHE_DOCUMENT_ROOT=/var/www/public
@@ -52,17 +49,35 @@ RUN a2enmod rewrite headers \
     && echo "ServerName localhost" > /etc/apache2/conf-available/servername.conf \
     && a2enconf servername \
     && echo "Listen ${PORT}" > /etc/apache2/ports.conf \
-    && echo "<VirtualHost *:${PORT}>\n\
-    ServerAdmin webmaster@localhost\n    DocumentRoot \${APACHE_DOCUMENT_ROOT}\n\
-    <Directory \"\${APACHE_DOCUMENT_ROOT}\">\n        Options -Indexes +FollowSymLinks\n        AllowOverride All\n        Require all granted\n    </Directory>\n\
-    ErrorLog \${APACHE_LOG_DIR}/error.log\n    CustomLog \${APACHE_LOG_DIR}/access.log combined\n\
-</VirtualHost>" > /etc/apache2/sites-available/000-default.conf \
+    && echo '# Virtual Host configuration' > /etc/apache2/sites-available/000-default.conf \
+    && echo '<VirtualHost *:${PORT}>' >> /etc/apache2/sites-available/000-default.conf \
+    && echo '    ServerAdmin webmaster@localhost' >> /etc/apache2/sites-available/000-default.conf \
+    && echo '    DocumentRoot ${APACHE_DOCUMENT_ROOT}' >> /etc/apache2/sites-available/000-default.conf \
+    && echo '    <Directory "${APACHE_DOCUMENT_ROOT}">' >> /etc/apache2/sites-available/000-default.conf \
+    && echo '        Options -Indexes +FollowSymLinks' >> /etc/apache2/sites-available/000-default.conf \
+    && echo '        AllowOverride All' >> /etc/apache2/sites-available/000-default.conf \
+    && echo '        Require all granted' >> /etc/apache2/sites-available/000-default.conf \
+    && echo '    </Directory>' >> /etc/apache2/sites-available/000-default.conf \
+    && echo '    ErrorLog ${APACHE_LOG_DIR}/error.log' >> /etc/apache2/sites-available/000-default.conf \
+    && echo '    CustomLog ${APACHE_LOG_DIR}/access.log combined' >> /etc/apache2/sites-available/000-default.conf \
+    && echo '</VirtualHost>' >> /etc/apache2/sites-available/000-default.conf \
     && a2dissite 000-default \
     && a2ensite 000-default.conf
 
 # Set proper permissions
 RUN chown -R www-data:www-data /var/www \
     && chmod -R 775 storage bootstrap/cache
+
+# Generate application key if not set
+RUN if [ -z "$APP_KEY" ]; then \
+        php artisan key:generate --force; \
+    fi
+
+# Clear all caches
+RUN php artisan config:clear \
+    && php artisan cache:clear \
+    && php artisan view:clear \
+    && php artisan route:clear
 
 # Expose the port the app runs on
 EXPOSE ${PORT}
